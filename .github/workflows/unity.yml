@@ -1,4 +1,4 @@
-name: Draco Unity library CI
+name: Draco Unity library CI v2
 
 on:
   # Trigger the workflow on pull request,
@@ -243,19 +243,29 @@ jobs:
       uses: nttld/setup-ndk@v1
       id: setup-ndk
       with:
-        ndk-version: r21e
+        ndk-version: r28        # r27+ recommended for 16KB alignment
         add-to-path: false
+
+            # Common CMake args for all Android builds (16KB page size + static libc++)
+    - name: Set Android CMake args
+      id: android-cmake-args
+      run: |
+        echo 'CMAKE_ARGS=-DCMAKE_BUILD_TYPE=MinSizeRel \
+          -DANDROID_NDK=${{ steps.setup-ndk.outputs.ndk-path }} \
+          -DCMAKE_TOOLCHAIN_FILE="${{ steps.setup-ndk.outputs.ndk-path }}/build/cmake/android.toolchain.cmake" \
+          -DANDROID_STL=c++_static \
+          -DCMAKE_SHARED_LINKER_FLAGS="-Wl,-z,max-page-size=16384" \
+          -DCMAKE_MODULE_LINKER_FLAGS="-Wl,-z,max-page-size=16384" \
+          -DCMAKE_EXE_LINKER_FLAGS="-Wl,-z,max-page-size=16384" \
+          -DDRACO_UNITY_PLUGIN=ON \
+          -DDRACO_GLTF_BITSTREAM=ON \
+          -DDRACO_BACKWARDS_COMPATIBILITY=OFF' >> $GITHUB_OUTPUT
 
     - name: Configure Android arm64-v8a
       run: >
         cmake -B build_android_arm64-v8a
         -DANDROID_ABI=arm64-v8a
-        -DCMAKE_BUILD_TYPE=MinSizeRel
-        -DANDROID_NDK=${{ steps.setup-ndk.outputs.ndk-path }}
-        -DCMAKE_TOOLCHAIN_FILE="${{ steps.setup-ndk.outputs.ndk-path }}/build/cmake/android.toolchain.cmake"
-        -DDRACO_UNITY_PLUGIN=ON
-        -DDRACO_GLTF_BITSTREAM=ON
-        -DDRACO_BACKWARDS_COMPATIBILITY=OFF
+        ${{ steps.android-cmake-args.outputs.CMAKE_ARGS }}
     - name: Build Android arm64-v8a
       run: cmake --build build_android_arm64-v8a --target draco_unity -j
 
@@ -263,12 +273,7 @@ jobs:
       run: >
         cmake -B build_android_armeabi-v7a
         -DANDROID_ABI=armeabi-v7a
-        -DCMAKE_BUILD_TYPE=MinSizeRel
-        -DANDROID_NDK=${{ steps.setup-ndk.outputs.ndk-path }}
-        -DCMAKE_TOOLCHAIN_FILE="${{ steps.setup-ndk.outputs.ndk-path }}/build/cmake/android.toolchain.cmake"
-        -DDRACO_UNITY_PLUGIN=ON
-        -DDRACO_GLTF_BITSTREAM=ON
-        -DDRACO_BACKWARDS_COMPATIBILITY=OFF
+        ${{ steps.android-cmake-args.outputs.CMAKE_ARGS }}
     - name: Build Android armeabi-v7a
       run: cmake --build build_android_armeabi-v7a --target draco_unity -j
 
@@ -276,12 +281,7 @@ jobs:
       run: >
         cmake -B build_android_x86
         -DANDROID_ABI=x86
-        -DCMAKE_BUILD_TYPE=MinSizeRel
-        -DANDROID_NDK=${{ steps.setup-ndk.outputs.ndk-path }}
-        -DCMAKE_TOOLCHAIN_FILE="${{ steps.setup-ndk.outputs.ndk-path }}/build/cmake/android.toolchain.cmake"
-        -DDRACO_UNITY_PLUGIN=ON
-        -DDRACO_GLTF_BITSTREAM=ON
-        -DDRACO_BACKWARDS_COMPATIBILITY=OFF
+        ${{ steps.android-cmake-args.outputs.CMAKE_ARGS }}
     - name: Build Android x86
       run: cmake --build build_android_x86 --target draco_unity -j
 
@@ -289,14 +289,17 @@ jobs:
       run: >
         cmake -B build_android_x86_64
         -DANDROID_ABI=x86_64
-        -DCMAKE_BUILD_TYPE=MinSizeRel
-        -DANDROID_NDK=${{ steps.setup-ndk.outputs.ndk-path }}
-        -DCMAKE_TOOLCHAIN_FILE="${{ steps.setup-ndk.outputs.ndk-path }}/build/cmake/android.toolchain.cmake"
-        -DDRACO_UNITY_PLUGIN=ON
-        -DDRACO_GLTF_BITSTREAM=ON
-        -DDRACO_BACKWARDS_COMPATIBILITY=OFF
+        ${{ steps.android-cmake-args.outputs.CMAKE_ARGS }}
     - name: Build Android x86_64
       run: cmake --build build_android_x86_64 --target draco_unity -j
+
+    # Verify alignment (optional but recommended)
+    - name: Verify 16KB alignment
+      run: |
+        for so in build_android_*/*.so; do
+          echo "==== $so ====";
+          readelf -lW "$so" | grep -E "Max|LOAD|Align";
+        done
 
     # # Emscripten
     # - name: Setup Emscripten
