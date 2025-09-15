@@ -1,0 +1,494 @@
+Can I configure this GitHub action to build for Android with 16KB page size support?
+
+name: Draco Unity library CI
+
+on:
+  # Trigger the workflow on pull request,
+  # but only for the main branch
+  pull_request:
+    branches:
+      - main
+  # Also trigger on release created events
+  release:
+    types:
+      - created
+    branches:
+      - unity
+    tags:
+      - unity*
+  workflow_dispatch:
+
+# env:
+#   # Emscripten version for Unity 2022.2 or newer
+#   EM_3_VERSION: 3.1.8
+#   EM_3_CACHE_FOLDER: 'emsdk-3-cache'
+#   # Emscripten version for Unity 2021.2 and 2021.3
+#   EM_2_VERSION: 2.0.19
+#   EM_2_CACHE_FOLDER: 'emsdk-2-cache'
+#   # Emscripten version that comes with older Unity versions
+#   EM_1_VERSION: 1.38.48-fastcomp
+#   EM_1_CACHE_FOLDER: 'emsdk-1-cache'
+
+jobs:
+
+  mac:
+
+    runs-on: macOS-11
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - uses: maxim-lobanov/setup-xcode@v1
+      with:
+        xcode-version: latest-stable
+
+    - name: Install Ninja
+      run: brew install ninja
+
+    - name: Configure macOS
+      # ARCHS_STANDARD explicitly enables Apple silicon on Xcode 12.2
+      run: >
+        cmake . -G Ninja -B build_mac
+        -DCMAKE_BUILD_TYPE=MinSizeRel
+        -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64"
+        -DDRACO_UNITY_PLUGIN=ON
+        -DDRACO_GLTF_BITSTREAM=ON
+        -DDRACO_BACKWARDS_COMPATIBILITY=OFF
+    - name: Build macOS
+      run: cmake --build build_mac --config MinSizeRel --target draco_unity
+
+    - name: Configure iOS
+      run: >
+        cmake . -G Xcode -B build_ios
+        -DCMAKE_BUILD_TYPE=MinSizeRel
+        -DCMAKE_SYSTEM_NAME=iOS
+        -DCMAKE_OSX_ARCHITECTURES=armv7\;armv7s\;arm64
+        -DCMAKE_OSX_DEPLOYMENT_TARGET=10.0
+        -DDRACO_UNITY_PLUGIN=ON
+        -DDRACO_GLTF_BITSTREAM=ON
+        -DDRACO_BACKWARDS_COMPATIBILITY=OFF
+    - name: Build iOS
+      run: cmake --build build_ios --config MinSizeRel --target draco_unity
+    - name: Build iOS Simulator
+      run: >
+        cmake
+        --build build_ios
+        --config MinSizeRel
+        --target draco_unity
+        -- 
+        -sdk iphonesimulator
+        -arch "arm64"
+        -arch "x86_64"
+        EXECUTABLE_SUFFIX=-simulator.a
+        ONLY_ACTIVE_ARCH=NO
+
+    - name: Configure tvOS
+      run: >
+        cmake . -G Xcode -B build_tvos
+        -DCMAKE_BUILD_TYPE=MinSizeRel
+        -DCMAKE_SYSTEM_NAME=tvOS
+        -DCMAKE_OSX_DEPLOYMENT_TARGET=10.0
+        -DDRACO_UNITY_PLUGIN=ON
+        -DDRACO_GLTF_BITSTREAM=ON
+        -DDRACO_BACKWARDS_COMPATIBILITY=OFF
+    - name: Build tvOS
+      run: cmake --build build_tvos --config MinSizeRel --target draco_unity
+    - name: Build tvOS Simulator
+      run: >
+        cmake
+        --build build_tvos
+        --config MinSizeRel
+        --target draco_unity
+        --
+        -sdk appletvsimulator
+        EXECUTABLE_SUFFIX=-simulator.a
+        ONLY_ACTIVE_ARCH=NO
+
+    - name: Package Apple
+      run: |
+        mkdir draco_apple
+        mkdir draco_apple/x86_64
+        mv build_mac/draco_unity.bundle draco_apple/x86_64
+        mkdir -p draco_apple/iOS
+        mv build_ios/MinSizeRel-iphoneos/libdraco_unity.a draco_apple/iOS
+        mv build_ios/MinSizeRel-iphonesimulator/libdraco_unity-simulator.a draco_apple/iOS
+        mkdir -p draco_apple/tvOS
+        mv build_tvos/MinSizeRel-appletvos/libdraco_unity.a draco_apple/tvOS
+        mv build_tvos/MinSizeRel-appletvsimulator/libdraco_unity-simulator.a draco_apple/tvOS
+    - name: Upload artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: draco_apple
+        path: draco_apple
+
+
+  windows:
+
+    runs-on: windows-2022
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Configure Windows x64
+      run: >
+        cmake . -G "Visual Studio 17 2022" -A x64 -B build_win_64
+        -DDRACO_UNITY_PLUGIN=ON
+        -DDRACO_GLTF_BITSTREAM=ON
+        -DDRACO_BACKWARDS_COMPATIBILITY=OFF
+    - name: Build Windows x64
+      run: cmake --build build_win_64 --config MinSizeRel --target draco_unity
+
+    - name: Configure Windows Win32
+      run: >
+        cmake . -G "Visual Studio 17 2022" -A Win32 -B build_win_32
+        -DDRACO_UNITY_PLUGIN=ON
+        -DDRACO_GLTF_BITSTREAM=ON
+        -DDRACO_BACKWARDS_COMPATIBILITY=OFF
+    - name: Build Windows Win32
+      run: cmake --build build_win_32 --config MinSizeRel --target draco_unity
+
+    - name: Configure Windows ARM64
+      run: >
+        cmake . -G "Visual Studio 17 2022" -A ARM64 -B build_win_arm64
+        -DDRACO_UNITY_PLUGIN=ON
+        -DDRACO_GLTF_BITSTREAM=ON
+        -DDRACO_BACKWARDS_COMPATIBILITY=OFF
+    - name: Build Windows ARM64
+      run: cmake --build build_win_arm64 --config MinSizeRel --target draco_unity
+
+    # Universal Windows Platform
+    - name: Configure Universal Windows Platform ARM
+      run: >
+        cmake . -G "Visual Studio 17 2022" -A ARM -B build_uwp_arm
+        -DDRACO_UNITY_PLUGIN=ON
+        -DDRACO_GLTF_BITSTREAM=ON
+        -DDRACO_BACKWARDS_COMPATIBILITY=OFF
+        -DCMAKE_SYSTEM_NAME:String=WindowsStore
+        -DCMAKE_SYSTEM_VERSION:String="10.0"
+    - name: Build Universal Windows Platform ARM
+      run: cmake --build build_uwp_arm --config MinSizeRel --target draco_unity
+        
+    - name: Configure Universal Windows Platform ARM64
+      run: >
+        cmake . -G "Visual Studio 17 2022" -A ARM64 -B build_uwp_arm64
+        -DDRACO_UNITY_PLUGIN=ON
+        -DDRACO_GLTF_BITSTREAM=ON
+        -DDRACO_BACKWARDS_COMPATIBILITY=OFF
+        -DCMAKE_SYSTEM_NAME:String=WindowsStore
+        -DCMAKE_SYSTEM_VERSION:String="10.0"
+    - name: Build Universal Windows Platform ARM64
+      run: cmake --build build_uwp_arm64 --config MinSizeRel --target draco_unity
+
+    - name: Configure Universal Windows Platform Win32
+      run: >
+        cmake . -G "Visual Studio 17 2022" -A Win32 -B build_uwp_x86
+        -DDRACO_UNITY_PLUGIN=ON
+        -DDRACO_GLTF_BITSTREAM=ON
+        -DDRACO_BACKWARDS_COMPATIBILITY=OFF
+        -DCMAKE_SYSTEM_NAME:String=WindowsStore
+        -DCMAKE_SYSTEM_VERSION:String="10.0"
+    - name: Build Universal Windows Platform Win32
+      run: cmake --build build_uwp_x86 --config MinSizeRel --target draco_unity
+
+    - name: Configure Universal Windows Platform x64
+      run: >
+        cmake . -G "Visual Studio 17 2022" -A x64 -B build_uwp_x64
+        -DDRACO_UNITY_PLUGIN=ON
+        -DDRACO_GLTF_BITSTREAM=ON
+        -DDRACO_BACKWARDS_COMPATIBILITY=OFF
+        -DCMAKE_SYSTEM_NAME:String=WindowsStore
+        -DCMAKE_SYSTEM_VERSION:String="10.0"
+    - name: Build Universal Windows Platform x64
+      run: cmake --build build_uwp_x64 --config MinSizeRel --target draco_unity
+
+    - name: Package Windows
+      run: |
+        mkdir draco_win/x86
+        mkdir draco_win/x86_64
+        mkdir draco_win/WSA/ARM
+        mkdir draco_win/WSA/ARM64
+        mkdir draco_win/WSA/x86
+        mkdir draco_win/WSA/x64
+        mkdir draco_win/Windows/ARM64
+        mv build_win_32\MinSizeRel\draco_unity.dll draco_win/x86
+        mv build_win_64\MinSizeRel\draco_unity.dll draco_win/x86_64
+        mv build_uwp_arm\MinSizeRel\draco_unity.dll draco_win/WSA/ARM
+        mv build_uwp_arm64\MinSizeRel\draco_unity.dll draco_win/WSA/ARM64
+        mv build_uwp_x86\MinSizeRel\draco_unity.dll draco_win/WSA/x86
+        mv build_uwp_x64\MinSizeRel\draco_unity.dll draco_win/WSA/x64
+        mv build_win_arm64\MinSizeRel\draco_unity.dll draco_win/Windows/ARM64
+    - name: Upload artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: draco_win
+        path: draco_win
+
+
+  linux:
+
+    runs-on: ubuntu-22.04
+
+    steps:
+    - uses: actions/checkout@v3
+    # - name: Setup cache
+    #   id: cache-system-libraries
+    #   uses: actions/cache@v3
+    #   with:
+    #     path: ${{env.EM_2_CACHE_FOLDER}}
+    #     key: ${{env.EM_2_VERSION}}-${{ runner.os }}
+    - name: Install Ninja
+      shell: bash
+      run: sudo apt-get install ninja-build
+
+    # Android
+    - name: Install Android NDK
+      uses: nttld/setup-ndk@v1
+      id: setup-ndk
+      with:
+        ndk-version: r28        # r27+ recommended for 16KB alignment
+        add-to-path: false
+
+            # Common CMake args for all Android builds (16KB page size + static libc++)
+    - name: Set Android CMake args
+      id: android-cmake-args
+      run: |
+        echo 'CMAKE_ARGS=-DCMAKE_BUILD_TYPE=MinSizeRel \
+          -DANDROID_NDK=${{ steps.setup-ndk.outputs.ndk-path }} \
+          -DCMAKE_TOOLCHAIN_FILE="${{ steps.setup-ndk.outputs.ndk-path }}/build/cmake/android.toolchain.cmake" \
+          -DANDROID_STL=c++_static \
+          -DCMAKE_SHARED_LINKER_FLAGS="-Wl,-z,max-page-size=16384" \
+          -DCMAKE_MODULE_LINKER_FLAGS="-Wl,-z,max-page-size=16384" \
+          -DCMAKE_EXE_LINKER_FLAGS="-Wl,-z,max-page-size=16384" \
+          -DDRACO_UNITY_PLUGIN=ON \
+          -DDRACO_GLTF_BITSTREAM=ON \
+          -DDRACO_BACKWARDS_COMPATIBILITY=OFF' >> $GITHUB_OUTPUT
+
+    - name: Configure Android arm64-v8a
+      run: >
+        cmake -B build_android_arm64-v8a
+        -DANDROID_ABI=arm64-v8a
+        ${{ steps.android-cmake-args.outputs.CMAKE_ARGS }}
+    - name: Build Android arm64-v8a
+      run: cmake --build build_android_arm64-v8a --target draco_unity -j
+
+    - name: Configure Android armeabi-v7a
+      run: >
+        cmake -B build_android_armeabi-v7a
+        -DANDROID_ABI=armeabi-v7a
+        ${{ steps.android-cmake-args.outputs.CMAKE_ARGS }}
+    - name: Build Android armeabi-v7a
+      run: cmake --build build_android_armeabi-v7a --target draco_unity -j
+
+    - name: Configure Android x86
+      run: >
+        cmake -B build_android_x86
+        -DANDROID_ABI=x86
+        ${{ steps.android-cmake-args.outputs.CMAKE_ARGS }}
+    - name: Build Android x86
+      run: cmake --build build_android_x86 --target draco_unity -j
+
+    - name: Configure Android x86_64
+      run: >
+        cmake -B build_android_x86_64
+        -DANDROID_ABI=x86_64
+        ${{ steps.android-cmake-args.outputs.CMAKE_ARGS }}
+    - name: Build Android x86_64
+      run: cmake --build build_android_x86_64 --target draco_unity -j
+
+    # Verify alignment (optional but recommended)
+    - name: Verify 16KB alignment
+      run: |
+        for so in build_android_*/*.so; do
+          echo "==== $so ====";
+          readelf -lW "$so" | grep -E "Max|LOAD|Align";
+        done
+
+    # # Emscripten
+    # - name: Setup Emscripten
+    #   uses: mymindstorm/setup-emsdk@v12
+    #   with:
+    #     version: ${{env.EM_2_VERSION}}
+    #     actions-cache-folder: ${{env.EM_2_CACHE_FOLDER}}
+    # - name: Configure WebAssembly
+    #   run: >
+    #     emcmake cmake -B build_web
+    #     -DCMAKE_BUILD_TYPE=MinSizeRel
+    #     -DDRACO_JS_GLUE=OFF
+    #     -DDRACO_UNITY_PLUGIN=ON
+    #     -DDRACO_GLTF_BITSTREAM=ON
+    #     -DDRACO_BACKWARDS_COMPATIBILITY=OFF
+    # - name: Build WebAssembly
+    #   run: cmake --build build_web --target draco_unity -j
+
+    # Linux artifacts
+    - name: Package Linux
+      run: |
+        # mkdir -p draco_linux/WebGL/2021
+        # mv build_web/libdraco_unity.a draco_linux/WebGL/2021
+        mkdir -p draco_linux/Android/libs/arm64-v8a
+        mkdir -p draco_linux/Android/libs/armeabi-v7a
+        mkdir -p draco_linux/Android/libs/x86
+        mkdir -p draco_linux/Android/libs/x86_64
+        mv build_android_arm64-v8a/libdraco_unity.so \
+          draco_linux/Android/libs/arm64-v8a
+        mv build_android_armeabi-v7a/libdraco_unity.so \
+          draco_linux/Android/libs/armeabi-v7a
+        mv build_android_x86/libdraco_unity.so \
+          draco_linux/Android/libs/x86
+        mv build_android_x86_64/libdraco_unity.so \
+          draco_linux/Android/libs/x86_64
+    - name: Upload artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: draco_linux
+        path: draco_linux
+
+
+  # linux_emscripten_3:
+
+  #   runs-on: ubuntu-22.04
+
+  #   steps:
+  #   - uses: actions/checkout@v3
+  #   - name: Setup cache
+  #     id: cache-system-libraries
+  #     uses: actions/cache@v3
+  #     with:
+  #       path: ${{env.EM_3_CACHE_FOLDER}}
+  #       key: ${{env.EM_3_VERSION}}-${{ runner.os }}
+
+  #   # Emscripten 3
+  #   - name: Setup Emscripten
+  #     uses: mymindstorm/setup-emsdk@v12
+  #     with:
+  #       version: ${{env.EM_3_VERSION}}
+  #       actions-cache-folder: ${{env.EM_3_CACHE_FOLDER}}
+  #   - name: Configure WebAssembly
+  #     run: >
+  #       EMSCRIPTEN="$EMSDK/upstream/emscripten" emcmake cmake -B build_web
+  #       -DCMAKE_BUILD_TYPE=MinSizeRel
+  #       -DDRACO_JS_GLUE=OFF
+  #       -DDRACO_UNITY_PLUGIN=ON
+  #       -DDRACO_GLTF_BITSTREAM=ON \
+  #       -DDRACO_BACKWARDS_COMPATIBILITY=OFF
+  #   - name: Build WebAssembly
+  #     run: cmake --build build_web --target draco_unity -j
+
+  #   # Artifacts
+  #   - name: Package Linux Emscripten 3
+  #     run: |
+  #       mkdir -p draco_emscripten_3/WebGL/2022
+  #       mv build_web/libdraco_unity.a draco_emscripten_3/WebGL/2022
+  #   - name: Upload artifact
+  #     uses: actions/upload-artifact@v3
+  #     with:
+  #       name: draco_emscripten_3
+  #       path: draco_emscripten_3
+
+
+  linux_legacy:
+
+    runs-on: ubuntu-20.04
+
+    steps:
+    - uses: actions/checkout@v3
+    # - name: Setup cache
+    #   id: cache-system-libraries
+    #   uses: actions/cache@v3
+    #   with:
+    #     path: ${{env.EM_1_CACHE_FOLDER}}
+    #     key: ${{env.EM_1_VERSION}}-${{ runner.os }}
+
+    - name: Get latest CMake and ninja
+      uses: lukka/get-cmake@latest
+
+    # Linux 64
+    - name: Configure Linux 64
+      run: >
+        cmake . -G Ninja -B build_linux_64
+        -DCMAKE_BUILD_TYPE=MinSizeRel
+        -DDRACO_UNITY_PLUGIN=ON
+        -DDRACO_GLTF_BITSTREAM=ON
+        -DDRACO_BACKWARDS_COMPATIBILITY=OFF
+    - name: Build Linux 64
+      run: cmake --build build_linux_64 --target draco_unity -j
+
+    # # Emscripten 1
+    # - name: Setup Emscripten 1
+    #   uses: numworks/setup-emscripten@latest
+    #   with:
+    #     sdk: ${{env.EM_1_VERSION}}
+    # - name: Configure WebAssembly 1
+    #   run: >
+    #     emcmake cmake -B build_web
+    #     -DCMAKE_BUILD_TYPE=MinSizeRel
+    #     -DEMSCRIPTEN_GENERATE_BITCODE_STATIC_LIBRARIES=1
+    #     -DDRACO_JS_GLUE=OFF
+    #     -DDRACO_UNITY_PLUGIN=ON
+    #     -DDRACO_GLTF_BITSTREAM=ON
+    #     -DDRACO_BACKWARDS_COMPATIBILITY=OFF
+    # - name: Build WebAssembly 1
+    #   run: cmake --build build_web --target draco_unity -j
+
+    # Linux legacy artifacts
+    - name: Package Linux Legacy
+      run: |
+        mkdir -p draco_linux_legacy/x86_64
+        mv build_linux_64/libdraco_unity.so draco_linux_legacy/x86_64
+        # mkdir -p draco_linux_legacy/WebGL/2020
+        # mv build_web/libdraco_unity.bc draco_linux_legacy/WebGL/2020
+    - name: Upload artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: draco_linux_legacy
+        path: draco_linux_legacy
+
+
+
+  combine:
+    name: combine artifacts
+    runs-on: ubuntu-22.04
+    needs: 
+      - mac
+      - windows
+      - linux
+      - linux_legacy
+      # - linux_emscripten_3
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v3
+        with:
+          path: artifacts
+      - name: Display structure of downloaded files
+        run: ls -R
+        working-directory: artifacts
+      - name: Combine
+        run: |
+          mkdir draco
+          cp -r artifacts/draco_apple/* draco
+          cp -r artifacts/draco_win/* draco
+          cp -r artifacts/draco_linux/* draco
+          cp -r artifacts/draco_linux_legacy/* draco
+          # cp -r artifacts/draco_emscripten_3/* draco
+      - name: Zip
+        run: zip -r draco.zip draco
+      - name: Upload release assets
+        uses: AButler/upload-release-assets@v2.0
+        if: github.event_name == 'release' && github.event.action == 'created'
+        with:
+          files: draco.zip
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: draco
+          path: draco
+      - name: Delete obsolete artifacts
+        uses: geekyeggo/delete-artifact@v2
+        with:
+          name: |
+            draco_apple
+            draco_win
+            draco_linux
+            draco_linux_legacy
+            # draco_emscripten_3
