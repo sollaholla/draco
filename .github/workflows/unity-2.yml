@@ -1,4 +1,4 @@
-name: Draco Unity library CI 2.0
+name: Draco Unity library CI v2
 
 on:
   # Trigger the workflow on pull request,
